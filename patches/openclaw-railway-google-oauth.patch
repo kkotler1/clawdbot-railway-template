@@ -1,0 +1,328 @@
+diff --git a/extensions/google-antigravity-auth/index.ts b/extensions/google-antigravity-auth/index.ts
+index 19435df..f57bca4 100644
+--- a/extensions/google-antigravity-auth/index.ts
++++ b/extensions/google-antigravity-auth/index.ts
+@@ -3,13 +3,23 @@ import { readFileSync } from "node:fs";
+ import { createServer } from "node:http";
+ import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+ 
+-// OAuth constants - decoded from pi-ai's base64 encoded values to stay in sync
+-const decode = (s: string) => Buffer.from(s, "base64").toString();
+-const CLIENT_ID = decode(
+-  "MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
+-);
+-const CLIENT_SECRET = decode("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
+-const REDIRECT_URI = "http://localhost:51121/oauth-callback";
++function resolveGoogleOAuthConfig(): { clientId: string; clientSecret: string; redirectUri: string } {
++  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
++  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
++  const redirectUri = process.env.GOOGLE_REDIRECT_URI?.trim();
++  if (!clientId) throw new Error("GOOGLE_CLIENT_ID is required for Google OAuth.");
++  if (!clientSecret) throw new Error("GOOGLE_CLIENT_SECRET is required for Google OAuth.");
++  if (!redirectUri)
++    throw new Error("GOOGLE_REDIRECT_URI is required for Google OAuth (must be your public HTTPS callback URL).");
++  const url = new URL(redirectUri);
++  const hostIsLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
++  if (hostIsLocal || url.protocol !== "https:") {
++    throw new Error(
++      `GOOGLE_REDIRECT_URI must be a public HTTPS URL (e.g. https://<railway-domain>/oauth/callback). Got: ${redirectUri}`,
++    );
++  }
++  return { clientId, clientSecret, redirectUri };
++}
+ const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+ const TOKEN_URL = "https://oauth2.googleapis.com/token";
+ const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
+@@ -77,10 +87,11 @@ function shouldUseManualOAuthFlow(isRemote: boolean): boolean {
+ }
+ 
+ function buildAuthUrl(params: { challenge: string; state: string }): string {
++  const { clientId, redirectUri } = resolveGoogleOAuthConfig();
+   const url = new URL(AUTH_URL);
+-  url.searchParams.set("client_id", CLIENT_ID);
++  url.searchParams.set("client_id", clientId);
+   url.searchParams.set("response_type", "code");
+-  url.searchParams.set("redirect_uri", REDIRECT_URI);
++  url.searchParams.set("redirect_uri", redirectUri);
+   url.searchParams.set("scope", SCOPES.join(" "));
+   url.searchParams.set("code_challenge", params.challenge);
+   url.searchParams.set("code_challenge_method", "S256");
+@@ -113,7 +124,8 @@ function parseCallbackInput(input: string): { code: string; state: string } | {
+ }
+ 
+ async function startCallbackServer(params: { timeoutMs: number }) {
+-  const redirect = new URL(REDIRECT_URI);
++  const { redirectUri } = resolveGoogleOAuthConfig();
++  const redirect = new URL(redirectUri);
+   const port = redirect.port ? Number(redirect.port) : 51121;
+ 
+   let settled = false;
+@@ -190,15 +202,16 @@ async function exchangeCode(params: {
+   code: string;
+   verifier: string;
+ }): Promise<{ access: string; refresh: string; expires: number }> {
++  const { clientId, clientSecret, redirectUri } = resolveGoogleOAuthConfig();
+   const response = await fetch(TOKEN_URL, {
+     method: "POST",
+     headers: { "Content-Type": "application/x-www-form-urlencoded" },
+     body: new URLSearchParams({
+-      client_id: CLIENT_ID,
+-      client_secret: CLIENT_SECRET,
++      client_id: clientId,
++      client_secret: clientSecret,
+       code: params.code,
+       grant_type: "authorization_code",
+-      redirect_uri: REDIRECT_URI,
++      redirect_uri: redirectUri,
+       code_verifier: params.verifier,
+     }),
+   });
+@@ -310,66 +323,42 @@ async function loginAntigravity(params: {
+   email?: string;
+   projectId: string;
+ }> {
++  const { redirectUri } = resolveGoogleOAuthConfig();
+   const { verifier, challenge } = generatePkce();
+   const state = randomBytes(16).toString("hex");
+   const authUrl = buildAuthUrl({ challenge, state });
+ 
+-  let callbackServer: Awaited<ReturnType<typeof startCallbackServer>> | null = null;
+-  const needsManual = shouldUseManualOAuthFlow(params.isRemote);
+-  if (!needsManual) {
+-    try {
+-      callbackServer = await startCallbackServer({ timeoutMs: 5 * 60 * 1000 });
+-    } catch {
+-      callbackServer = null;
+-    }
+-  }
+-
+-  if (!callbackServer) {
+-    await params.note(
+-      [
+-        "Open the URL in your local browser.",
+-        "After signing in, copy the full redirect URL and paste it back here.",
+-        "",
+-        `Auth URL: ${authUrl}`,
+-        `Redirect URI: ${REDIRECT_URI}`,
+-      ].join("\n"),
+-      "Google Antigravity OAuth",
+-    );
+-    // Output raw URL below the box for easy copying (fixes #1772)
+-    params.log("");
+-    params.log("Copy this URL:");
+-    params.log(authUrl);
+-    params.log("");
+-  }
+-
+-  if (!needsManual) {
+-    params.progress.update("Opening Google sign-in…");
+-    try {
+-      await params.openUrl(authUrl);
+-    } catch {
+-      // ignore
+-    }
++  await params.note(
++    [
++      "Open the URL in your browser.",
++      "After signing in, copy the full redirect URL and paste it back here.",
++      "",
++      `Auth URL: ${authUrl}`,
++      `Redirect URI: ${redirectUri}`,
++    ].join("\n"),
++    "Google Antigravity OAuth",
++  );
++  // Output raw URL below the box for easy copying
++  params.log("");
++  params.log("Copy this URL:");
++  params.log(authUrl);
++  params.log("");
++
++  params.progress.update("Opening Google sign-in…");
++  try {
++    await params.openUrl(authUrl);
++  } catch {
++    // ignore
+   }
+ 
+-  let code = "";
+-  let returnedState = "";
+-
+-  if (callbackServer) {
+-    params.progress.update("Waiting for OAuth callback…");
+-    const callback = await callbackServer.waitForCallback();
+-    code = callback.searchParams.get("code") ?? "";
+-    returnedState = callback.searchParams.get("state") ?? "";
+-    await callbackServer.close();
+-  } else {
+-    params.progress.update("Waiting for redirect URL…");
+-    const input = await params.prompt("Paste the redirect URL: ");
+-    const parsed = parseCallbackInput(input);
+-    if ("error" in parsed) {
+-      throw new Error(parsed.error);
+-    }
+-    code = parsed.code;
+-    returnedState = parsed.state;
++  params.progress.update("Waiting for redirect URL…");
++  const input = await params.prompt("Paste the redirect URL: ");
++  const parsed = parseCallbackInput(input);
++  if ("error" in parsed) {
++    throw new Error(parsed.error);
+   }
++  const code = parsed.code;
++  const returnedState = parsed.state;
+ 
+   if (!code) {
+     throw new Error("Missing OAuth code");
+@@ -402,7 +391,7 @@ const antigravityPlugin = {
+         {
+           id: "oauth",
+           label: "Google OAuth",
+-          hint: "PKCE + localhost callback",
++          hint: "PKCE + public HTTPS callback (manual paste)",
+           kind: "oauth",
+           run: async (ctx) => {
+             const spin = ctx.prompter.progress("Starting Antigravity OAuth…");
+diff --git a/extensions/google-gemini-cli-auth/oauth.ts b/extensions/google-gemini-cli-auth/oauth.ts
+index 5d386f2..a52939c 100644
+--- a/extensions/google-gemini-cli-auth/oauth.ts
++++ b/extensions/google-gemini-cli-auth/oauth.ts
+@@ -3,12 +3,23 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+ import { createServer } from "node:http";
+ import { delimiter, dirname, join } from "node:path";
+ 
+-const CLIENT_ID_KEYS = ["OPENCLAW_GEMINI_OAUTH_CLIENT_ID", "GEMINI_CLI_OAUTH_CLIENT_ID"];
+-const CLIENT_SECRET_KEYS = [
+-  "OPENCLAW_GEMINI_OAUTH_CLIENT_SECRET",
+-  "GEMINI_CLI_OAUTH_CLIENT_SECRET",
+-];
+-const REDIRECT_URI = "http://localhost:8085/oauth2callback";
++function resolveGoogleOAuthEnv(): { clientId: string; clientSecret: string; redirectUri: string } {
++  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
++  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
++  const redirectUri = process.env.GOOGLE_REDIRECT_URI?.trim();
++  if (!clientId) throw new Error("GOOGLE_CLIENT_ID is required for Google OAuth.");
++  if (!clientSecret) throw new Error("GOOGLE_CLIENT_SECRET is required for Google OAuth.");
++  if (!redirectUri)
++    throw new Error("GOOGLE_REDIRECT_URI is required for Google OAuth (must be your public HTTPS callback URL).");
++  const url = new URL(redirectUri);
++  const hostIsLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
++  if (hostIsLocal || url.protocol !== "https:") {
++    throw new Error(
++      `GOOGLE_REDIRECT_URI must be a public HTTPS URL (e.g. https://<railway-domain>/oauth/callback). Got: ${redirectUri}`,
++    );
++  }
++  return { clientId, clientSecret, redirectUri };
++}
+ const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+ const TOKEN_URL = "https://oauth2.googleapis.com/token";
+ const USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json";
+@@ -158,23 +169,8 @@ function findFile(dir: string, name: string, depth: number): string | null {
+ }
+ 
+ function resolveOAuthClientConfig(): { clientId: string; clientSecret?: string } {
+-  // 1. Check env vars first (user override)
+-  const envClientId = resolveEnv(CLIENT_ID_KEYS);
+-  const envClientSecret = resolveEnv(CLIENT_SECRET_KEYS);
+-  if (envClientId) {
+-    return { clientId: envClientId, clientSecret: envClientSecret };
+-  }
+-
+-  // 2. Try to extract from installed Gemini CLI
+-  const extracted = extractGeminiCliCredentials();
+-  if (extracted) {
+-    return extracted;
+-  }
+-
+-  // 3. No credentials available
+-  throw new Error(
+-    "Gemini CLI not found. Install it first: brew install gemini-cli (or npm install -g @google/gemini-cli), or set GEMINI_CLI_OAUTH_CLIENT_ID.",
+-  );
++  const { clientId, clientSecret } = resolveGoogleOAuthEnv();
++  return { clientId, clientSecret };
+ }
+ 
+ function isWSL(): boolean {
+@@ -213,10 +209,11 @@ function generatePkce(): { verifier: string; challenge: string } {
+ 
+ function buildAuthUrl(challenge: string, verifier: string): string {
+   const { clientId } = resolveOAuthClientConfig();
++  const { redirectUri } = resolveGoogleOAuthEnv();
+   const params = new URLSearchParams({
+     client_id: clientId,
+     response_type: "code",
+-    redirect_uri: REDIRECT_URI,
++    redirect_uri: redirectUri,
+     scope: SCOPES.join(" "),
+     code_challenge: challenge,
+     code_challenge_method: "S256",
+@@ -260,6 +257,7 @@ async function waitForLocalCallback(params: {
+   timeoutMs: number;
+   onProgress?: (message: string) => void;
+ }): Promise<{ code: string; state: string }> {
++  const { redirectUri } = resolveGoogleOAuthEnv();
+   const port = 8085;
+   const hostname = "localhost";
+   const expectedPath = "/oauth2callback";
+@@ -339,7 +337,7 @@ async function waitForLocalCallback(params: {
+     });
+ 
+     server.listen(port, hostname, () => {
+-      params.onProgress?.(`Waiting for OAuth callback on ${REDIRECT_URI}…`);
++      params.onProgress?.(`Waiting for OAuth callback on ${redirectUri}…`);
+     });
+ 
+     timeout = setTimeout(() => {
+@@ -353,11 +351,12 @@ async function exchangeCodeForTokens(
+   verifier: string,
+ ): Promise<GeminiCliOAuthCredentials> {
+   const { clientId, clientSecret } = resolveOAuthClientConfig();
++  const { redirectUri } = resolveGoogleOAuthEnv();
+   const body = new URLSearchParams({
+     client_id: clientId,
+     code,
+     grant_type: "authorization_code",
+-    redirect_uri: REDIRECT_URI,
++    redirect_uri: redirectUri,
+     code_verifier: verifier,
+   });
+   if (clientSecret) {
+@@ -587,19 +586,13 @@ async function pollOperation(
+ export async function loginGeminiCliOAuth(
+   ctx: GeminiCliOAuthContext,
+ ): Promise<GeminiCliOAuthCredentials> {
+-  const needsManual = shouldUseManualOAuthFlow(ctx.isRemote);
++  // Railway/ephemeral containers: always use manual paste flow (no localhost callback servers).
++  const needsManual = true;
+   await ctx.note(
+-    needsManual
+-      ? [
+-          "You are running in a remote/VPS environment.",
+-          "A URL will be shown for you to open in your LOCAL browser.",
+-          "After signing in, copy the redirect URL and paste it back here.",
+-        ].join("\n")
+-      : [
+-          "Browser will open for Google authentication.",
+-          "Sign in with your Google account for Gemini CLI access.",
+-          "The callback will be captured automatically on localhost:8085.",
+-        ].join("\n"),
++    [
++      "A URL will be shown for you to open in your browser.",
++      "After signing in, copy the full redirect URL and paste it back here.",
++    ].join("\n"),
+     "Gemini CLI OAuth",
+   );
+ 
+diff --git a/src/hooks/gmail-setup-utils.ts b/src/hooks/gmail-setup-utils.ts
+index 4a95b10..b28bec3 100644
+--- a/src/hooks/gmail-setup-utils.ts
++++ b/src/hooks/gmail-setup-utils.ts
+@@ -172,6 +172,9 @@ export async function ensureDependency(bin: string, brewArgs: string[]) {
+   if (hasBinary(bin)) {
+     return;
+   }
++  if (process.env.OPENCLAW_NO_RUNTIME_INSTALL === "1") {
++    throw new Error(`${bin} binary missing; must be installed at build time`);
++  }
+   if (process.platform !== "darwin") {
+     throw new Error(`${bin} not installed; install it and retry`);
+   }
