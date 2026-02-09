@@ -45,6 +45,8 @@ ENV NODE_ENV=production
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    python3 \
+    python3-pip \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -52,6 +54,11 @@ WORKDIR /app
 # Wrapper deps
 COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
+
+# Python deps (gogcli / `gog` CLI)
+COPY requirements.txt ./
+RUN python3 -m pip install --no-cache-dir --user -r requirements.txt
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Copy built openclaw
 COPY --from=openclaw-build /openclaw /openclaw
