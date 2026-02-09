@@ -99,8 +99,6 @@
       authSecret: document.getElementById('authSecret').value,
       telegramToken: document.getElementById('telegramToken').value,
       discordToken: document.getElementById('discordToken').value,
-      slackBotToken: document.getElementById('slackBotToken').value,
-      slackAppToken: document.getElementById('slackAppToken').value
     };
 
     logEl.textContent = 'Running...\n';
