@@ -17,11 +17,10 @@ const GOOGLE_CALENDAR_MCP_DIR = "/data/google-calendar-mcp";
 const DEFAULT_GOOGLE_OAUTH_CLIENT_SECRET_PATH = `${GOOGLE_CALENDAR_MCP_DIR}/client_secret.json`;
 const DEFAULT_GOOGLE_OAUTH_TOKENS_PATH = `${GOOGLE_CALENDAR_MCP_DIR}/tokens.json`;
 
-function resolveMcpCliCommand() {
-  // Prefer stable absolute paths (Dockerfile creates /usr/local/bin symlinks).
-  if (fs.existsSync("/usr/local/bin/mcp-server")) return "/usr/local/bin/mcp-server";
-  if (fs.existsSync("/usr/local/bin/mcp")) return "/usr/local/bin/mcp";
-  throw new Error("MCP CLI not found on PATH");
+function resolveGoogleCalendarMcpCommand() {
+  // @cocal/google-calendar-mcp runs via npx.
+  // We keep this centralized so tool wiring doesn't guess binary names.
+  return { command: "npx", args: ["-y", "@cocal/google-calendar-mcp"] };
 }
 
 /**
@@ -558,10 +557,10 @@ function runCmd(cmd, args, opts = {}) {
 async function configureGoogleCalendarMcpTool() {
   // Wire Google Calendar as an MCP tool/server (replaces the legacy non-MCP integration path).
   // Best-effort: attempt multiple config paths to match the installed OpenClaw version.
-  const mcpCmd = resolveMcpCliCommand();
+  const mcp = resolveGoogleCalendarMcpCommand();
   const serverDef = {
-    command: mcpCmd,
-    args: ["google-calendar"],
+    command: mcp.command,
+    args: mcp.args,
     env: {
       GOOGLE_OAUTH_CLIENT_SECRET_PATH:
         process.env.GOOGLE_OAUTH_CLIENT_SECRET_PATH?.trim() ||
