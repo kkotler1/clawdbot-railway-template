@@ -50,6 +50,9 @@ RUN apt-get update \
     python3-pip \
   && rm -rf /var/lib/apt/lists/*
 
+# Install MCP server (global npm tool) for Google Calendar MCP tooling.
+RUN npm install -g @modelcontextprotocol/server
+
 # Install gog (gogcli) binary deterministically (for OpenClaw gog skill).
 # Do not rely on pip.
 ARG GOGCLI_VERSION=0.9.0
