@@ -52,24 +52,13 @@ RUN apt-get update \
     curl \
   && rm -rf /var/lib/apt/lists/*
 
-# Install MCP server (global npm tool) for Google Calendar MCP tooling.
-RUN npm install -g @modelcontextprotocol/server
+# Install Google Calendar MCP server (replaces legacy gog CLI).
+RUN npm install -g @cocal/google-calendar-mcp
 
-# Ensure MCP CLI is on a standard PATH location (Railway/Docker PATH workaround).
-RUN set -eux; \
-  PREFIX="$(npm config get prefix)"; \
-  echo "npm prefix = ${PREFIX}"; \
-  ls -la "${PREFIX}/bin" || true; \
-  if [ -f "${PREFIX}/bin/mcp-server" ]; then \
-    ln -sf "${PREFIX}/bin/mcp-server" /usr/local/bin/mcp-server; \
-  elif [ -f "${PREFIX}/bin/mcp" ]; then \
-    ln -sf "${PREFIX}/bin/mcp" /usr/local/bin/mcp-server; \
-  else \
-    echo "WARNING: No MCP CLI found in ${PREFIX}/bin (expected mcp-server or mcp)"; \
-    exit 1; \
-  fi; \
-  command -v mcp-server; \
-  mcp-server --help || true
+RUN mkdir -p /data/google-calendar-mcp
+
+COPY decode-gcal-creds.sh /usr/local/bin/decode-gcal-creds.sh
+RUN chmod +x /usr/local/bin/decode-gcal-creds.sh
 
 WORKDIR /app
 

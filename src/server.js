@@ -13,7 +13,7 @@ const warnedDeprecatedEnv = new Set();
 
 // Google Calendar MCP OAuth paths (decoded by docker-entrypoint.sh).
 // We set these as defaults so any spawned MCP process can reliably find the files.
-const GOOGLE_CALENDAR_MCP_DIR = "/root/.config/google-calendar-mcp";
+const GOOGLE_CALENDAR_MCP_DIR = "/data/google-calendar-mcp";
 const DEFAULT_GOOGLE_OAUTH_CLIENT_SECRET_PATH = `${GOOGLE_CALENDAR_MCP_DIR}/client_secret.json`;
 const DEFAULT_GOOGLE_OAUTH_TOKENS_PATH = `${GOOGLE_CALENDAR_MCP_DIR}/tokens.json`;
 
