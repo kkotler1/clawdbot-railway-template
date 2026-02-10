@@ -45,9 +45,29 @@ ENV NODE_ENV=production
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     python3 \
     python3-pip \
   && rm -rf /var/lib/apt/lists/*
+
+# Install gog (gogcli) binary deterministically (for OpenClaw gog skill).
+# Do not rely on pip.
+ARG GOGCLI_VERSION=0.9.0
+ARG GOGCLI_SHA256_LINUX_AMD64=28219f4a57478b3c38d5b33cfcb00f53a5943784b96c3b47e6dd877b384c5a13
+ARG GOGCLI_SHA256_LINUX_ARM64=67a4fb974c34165c60fb7edb613f78a25aa6f0a94a904b6bdc4641a409743f75
+RUN set -eux; \
+  arch="$(dpkg --print-architecture)"; \
+  case "$arch" in \
+    amd64) gog_arch="amd64"; sha="$GOGCLI_SHA256_LINUX_AMD64" ;; \
+    arm64) gog_arch="arm64"; sha="$GOGCLI_SHA256_LINUX_ARM64" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  url="https://github.com/steipete/gogcli/releases/download/v${GOGCLI_VERSION}/gogcli_${GOGCLI_VERSION}_linux_${gog_arch}.tar.gz"; \
+  curl -fsSL "$url" -o /tmp/gogcli.tgz; \
+  echo "${sha}  /tmp/gogcli.tgz" | sha256sum -c -; \
+  tar -xzf /tmp/gogcli.tgz -C /tmp gog; \
+  install -m 0755 /tmp/gog /usr/local/bin/gog; \
+  rm -f /tmp/gogcli.tgz /tmp/gog
 
 WORKDIR /app
 
