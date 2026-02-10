@@ -73,4 +73,7 @@ COPY src ./src
 ENV OPENCLAW_PUBLIC_PORT=8080
 ENV PORT=8080
 EXPOSE 8080
-CMD ["node", "src/server.js"]
+
+# TEMP DEBUG (remove after collecting logs): gog + oauth path introspection
+# ORIGINAL_STARTUP: CMD ["node", "src/server.js"]
+CMD ["bash", "-lc", "set +e; echo \"===== DEBUG BEGIN =====\"; whoami || true; pwd || true; echo \"$PATH\"; which gog || command -v gog || true; ls -la /usr/bin /usr/local/bin /app 2>/dev/null | grep -i gog || true; gog --help || gog version || true; ls -la ~/.config || true; ls -la ~/.config/gog* || true; echo \"===== DEBUG END =====\"; exec node src/server.js"]
