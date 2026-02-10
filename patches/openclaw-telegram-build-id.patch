@@ -1,0 +1,38 @@
+diff --git a/src/telegram/bot-handlers.ts b/src/telegram/bot-handlers.ts
+index 76cd125..a6f99ed 100644
+--- a/src/telegram/bot-handlers.ts
++++ b/src/telegram/bot-handlers.ts
+@@ -42,6 +42,8 @@ import {
+ } from "./model-buttons.js";
+ import { buildInlineKeyboard } from "./send.js";
+ 
++const BUILD_ID = "MCP_CUTOVER_2026_02_10_1445";
++
+ export const registerTelegramHandlers = ({
+   cfg,
+   accountId,
+@@ -766,6 +768,25 @@ export const registerTelegramHandlers = ({
+         }
+       }
+ 
++      // TEMP DEBUG: return build identifier without changing any other routing behavior.
++      // Triggered only when the message text equals "build id" or "version" (case-insensitive).
++      const buildIdText = typeof msg.text === "string" ? msg.text : "";
++      const buildIdKey = buildIdText.trim().toLowerCase();
++      if (buildIdKey === "build id" || buildIdKey === "version") {
++        await withTelegramApiErrorLogging({
++          operation: "sendMessage",
++          runtime,
++          fn: () =>
++            bot.api.sendMessage(chatId, `BUILD_ID: ${BUILD_ID}`, {
++              reply_to_message_id: msg.message_id,
++            }),
++        }).catch(() => {});
++        return;
++      }
++
+       // Text fragment handling - Telegram splits long pastes into multiple inbound messages (~4096 chars).
+       // We buffer “near-limit” messages and append immediately-following parts.
+       const text = typeof msg.text === "string" ? msg.text : undefined;
+       const isCommandLike = (text ?? "").trim().startsWith("/");
+

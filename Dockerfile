@@ -32,6 +32,10 @@ RUN set -eux; \
     sed -i -E 's/"openclaw"[[:space:]]*:[[:space:]]*"workspace:[^"]+"/"openclaw": "*"/g' "$f"; \
   done
 
+# TEMP DEBUG: Telegram "build id"/"version" responder to prove deployed version.
+COPY patches/openclaw-telegram-build-id.patch /tmp/openclaw-telegram-build-id.patch
+RUN git apply /tmp/openclaw-telegram-build-id.patch
+
 RUN pnpm install --no-frozen-lockfile
 RUN pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
