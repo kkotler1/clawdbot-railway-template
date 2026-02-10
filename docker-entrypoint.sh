@@ -59,14 +59,6 @@ decode_b64_to_file() {
 decode_b64_to_file "GOOGLE_OAUTH_CLIENT_SECRET_B64" "${CONFIG_DIR}/client_secret.json"
 decode_b64_to_file "GOOGLE_OAUTH_TOKENS_B64" "${CONFIG_DIR}/tokens.json"
 
-ls -la /root/.config/google-calendar-mcp 2>/dev/null || true
-test -s /root/.config/google-calendar-mcp/client_secret.json \
-  && echo "✅ /root/.config/google-calendar-mcp/client_secret.json present" \
-  || echo "⚠️  /root/.config/google-calendar-mcp/client_secret.json missing/empty"
-test -s /root/.config/google-calendar-mcp/tokens.json \
-  && echo "✅ /root/.config/google-calendar-mcp/tokens.json present" \
-  || echo "⚠️  /root/.config/google-calendar-mcp/tokens.json missing/empty"
-
 if [ "${DEBUG_MCP:-}" = "1" ]; then
   echo "DEBUG_MCP=1" >&2
   echo "PATH=${PATH}" >&2
@@ -75,6 +67,13 @@ if [ "${DEBUG_MCP:-}" = "1" ]; then
   mcp-server google-calendar --help >&2 || true
   mcp-server --list >&2 || true
   mcp --help >&2 || true
+  ls -la /root/.config/google-calendar-mcp 2>/dev/null || true
+  test -s /root/.config/google-calendar-mcp/client_secret.json \
+    && echo "✅ /root/.config/google-calendar-mcp/client_secret.json present" \
+    || echo "⚠️  /root/.config/google-calendar-mcp/client_secret.json missing/empty"
+  test -s /root/.config/google-calendar-mcp/tokens.json \
+    && echo "✅ /root/.config/google-calendar-mcp/tokens.json present" \
+    || echo "⚠️  /root/.config/google-calendar-mcp/tokens.json missing/empty"
   echo "DEBUG_MCP done" >&2
 fi
 

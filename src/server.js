@@ -11,6 +11,12 @@ import * as tar from "tar";
 /** @type {Set<string>} */
 const warnedDeprecatedEnv = new Set();
 
+// Google Calendar MCP OAuth paths (decoded by docker-entrypoint.sh).
+// We set these as defaults so any spawned MCP process can reliably find the files.
+const GOOGLE_CALENDAR_MCP_DIR = "/root/.config/google-calendar-mcp";
+const DEFAULT_GOOGLE_OAUTH_CLIENT_SECRET_PATH = `${GOOGLE_CALENDAR_MCP_DIR}/client_secret.json`;
+const DEFAULT_GOOGLE_OAUTH_TOKENS_PATH = `${GOOGLE_CALENDAR_MCP_DIR}/tokens.json`;
+
 /**
  * Prefer `primaryKey`, fall back to `deprecatedKey` with a one-time warning.
  * @param {string} primaryKey
@@ -153,6 +159,14 @@ async function startGateway() {
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
+  // Best-effort: keep Google Calendar MCP tool wiring present even for already-configured deployments
+  // (no /setup rerun). Never block startup on this.
+  try {
+    await configureGoogleCalendarMcpTool();
+  } catch {
+    // ignore
+  }
+
   const args = [
     "gateway",
     "run",
@@ -172,6 +186,12 @@ async function startGateway() {
       ...process.env,
       OPENCLAW_STATE_DIR: STATE_DIR,
       OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
+      // MCP servers/tools inherit env from the gateway process; provide stable default paths.
+      GOOGLE_OAUTH_CLIENT_SECRET_PATH:
+        process.env.GOOGLE_OAUTH_CLIENT_SECRET_PATH?.trim() ||
+        DEFAULT_GOOGLE_OAUTH_CLIENT_SECRET_PATH,
+      GOOGLE_OAUTH_TOKENS_PATH:
+        process.env.GOOGLE_OAUTH_TOKENS_PATH?.trim() || DEFAULT_GOOGLE_OAUTH_TOKENS_PATH,
     },
   });
 
@@ -507,6 +527,11 @@ function runCmd(cmd, args, opts = {}) {
         ...process.env,
         OPENCLAW_STATE_DIR: STATE_DIR,
         OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
+        GOOGLE_OAUTH_CLIENT_SECRET_PATH:
+          process.env.GOOGLE_OAUTH_CLIENT_SECRET_PATH?.trim() ||
+          DEFAULT_GOOGLE_OAUTH_CLIENT_SECRET_PATH,
+        GOOGLE_OAUTH_TOKENS_PATH:
+          process.env.GOOGLE_OAUTH_TOKENS_PATH?.trim() || DEFAULT_GOOGLE_OAUTH_TOKENS_PATH,
       },
     });
 
@@ -521,6 +546,40 @@ function runCmd(cmd, args, opts = {}) {
 
     proc.on("close", (code) => resolve({ code: code ?? 0, output: out }));
   });
+}
+
+async function configureGoogleCalendarMcpTool() {
+  // Wire Google Calendar as an MCP tool/server (replaces the legacy non-MCP integration path).
+  // Best-effort: attempt multiple config paths to match the installed OpenClaw version.
+  const serverDef = {
+    command: "mcp-server",
+    args: ["google-calendar"],
+    env: {
+      GOOGLE_OAUTH_CLIENT_SECRET_PATH:
+        process.env.GOOGLE_OAUTH_CLIENT_SECRET_PATH?.trim() ||
+        DEFAULT_GOOGLE_OAUTH_CLIENT_SECRET_PATH,
+      GOOGLE_OAUTH_TOKENS_PATH:
+        process.env.GOOGLE_OAUTH_TOKENS_PATH?.trim() || DEFAULT_GOOGLE_OAUTH_TOKENS_PATH,
+    },
+  };
+
+  const candidates = [
+    "mcpServers.google-calendar",
+    "tools.mcpServers.google-calendar",
+    "tools.mcp.servers.google-calendar",
+  ];
+
+  for (const p of candidates) {
+    const set = await runCmd(
+      OPENCLAW_NODE,
+      clawArgs(["config", "set", "--json", p, JSON.stringify(serverDef)]),
+    );
+    if (set.code === 0) {
+      const verify = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", p]));
+      return { ok: true, path: p, set, verify };
+    }
+  }
+  return { ok: false };
 }
 
 app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
@@ -549,6 +608,15 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
     await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+
+    // Google Calendar MCP wiring (best-effort; safe to deploy before vars are set).
+    const mcp = await configureGoogleCalendarMcpTool();
+    if (mcp.ok) {
+      extra += `\n[google-calendar mcp] configured at ${mcp.path}\n`;
+      extra += `\n[google-calendar mcp verify] exit=${mcp.verify.code} (output ${mcp.verify.output.length} chars)\n${mcp.verify.output || "(no output)"}`;
+    } else {
+      extra += "\n[google-calendar mcp] WARNING: could not auto-configure MCP tool in openclaw config (unknown config path)\n";
+    }
 
     const channelsHelp = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
     const helpText = channelsHelp.output || "";
