@@ -55,6 +55,22 @@ RUN apt-get update \
 # Install MCP server (global npm tool) for Google Calendar MCP tooling.
 RUN npm install -g @modelcontextprotocol/server
 
+# Ensure MCP CLI is on a standard PATH location (Railway/Docker PATH workaround).
+RUN set -eux; \
+  PREFIX="$(npm config get prefix)"; \
+  echo "npm prefix = ${PREFIX}"; \
+  ls -la "${PREFIX}/bin" || true; \
+  if [ -f "${PREFIX}/bin/mcp-server" ]; then \
+    ln -sf "${PREFIX}/bin/mcp-server" /usr/local/bin/mcp-server; \
+  elif [ -f "${PREFIX}/bin/mcp" ]; then \
+    ln -sf "${PREFIX}/bin/mcp" /usr/local/bin/mcp-server; \
+  else \
+    echo "WARNING: No MCP CLI found in ${PREFIX}/bin (expected mcp-server or mcp)"; \
+    exit 1; \
+  fi; \
+  command -v mcp-server; \
+  mcp-server --help || true
+
 WORKDIR /app
 
 # Wrapper deps

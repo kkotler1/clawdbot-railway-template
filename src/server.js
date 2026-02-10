@@ -17,6 +17,13 @@ const GOOGLE_CALENDAR_MCP_DIR = "/root/.config/google-calendar-mcp";
 const DEFAULT_GOOGLE_OAUTH_CLIENT_SECRET_PATH = `${GOOGLE_CALENDAR_MCP_DIR}/client_secret.json`;
 const DEFAULT_GOOGLE_OAUTH_TOKENS_PATH = `${GOOGLE_CALENDAR_MCP_DIR}/tokens.json`;
 
+function resolveMcpCliCommand() {
+  // Prefer stable absolute paths (Dockerfile creates /usr/local/bin symlinks).
+  if (fs.existsSync("/usr/local/bin/mcp-server")) return "/usr/local/bin/mcp-server";
+  if (fs.existsSync("/usr/local/bin/mcp")) return "/usr/local/bin/mcp";
+  throw new Error("MCP CLI not found on PATH");
+}
+
 /**
  * Prefer `primaryKey`, fall back to `deprecatedKey` with a one-time warning.
  * @param {string} primaryKey
@@ -160,11 +167,11 @@ async function startGateway() {
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
   // Best-effort: keep Google Calendar MCP tool wiring present even for already-configured deployments
-  // (no /setup rerun). Never block startup on this.
+  // (no /setup rerun). Do not block startup yet.
   try {
     await configureGoogleCalendarMcpTool();
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn(`[google-calendar mcp] WARNING: failed to configure MCP tool on startup: ${String(err)}`);
   }
 
   const args = [
@@ -551,8 +558,9 @@ function runCmd(cmd, args, opts = {}) {
 async function configureGoogleCalendarMcpTool() {
   // Wire Google Calendar as an MCP tool/server (replaces the legacy non-MCP integration path).
   // Best-effort: attempt multiple config paths to match the installed OpenClaw version.
+  const mcpCmd = resolveMcpCliCommand();
   const serverDef = {
-    command: "mcp-server",
+    command: mcpCmd,
     args: ["google-calendar"],
     env: {
       GOOGLE_OAUTH_CLIENT_SECRET_PATH:
