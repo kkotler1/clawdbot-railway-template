@@ -82,16 +82,16 @@ function resolveGatewayToken() {
   try {
     const existing = fs.readFileSync(tokenPath, "utf8").trim();
     if (existing) return existing;
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn(`[gateway-token] could not read ${tokenPath}: ${String(err)}`);
   }
 
   const generated = crypto.randomBytes(32).toString("hex");
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true });
     fs.writeFileSync(tokenPath, generated, { encoding: "utf8", mode: 0o600 });
-  } catch {
-    // best-effort
+  } catch (err) {
+    console.error(`[gateway-token] failed to persist token to ${tokenPath}: ${String(err)}`);
   }
   return generated;
 }
@@ -234,8 +234,8 @@ async function restartGateway() {
   if (gatewayProc) {
     try {
       gatewayProc.kill("SIGTERM");
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn(`[gateway] failed to send SIGTERM during restart: ${String(err)}`);
     }
     // Give it a moment to exit and release the port.
     await sleep(750);
@@ -272,8 +272,20 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 
-// Minimal health endpoint for Railway.
-app.get("/setup/healthz", (_req, res) => res.json({ ok: true }));
+// Health endpoint for Railway.
+// Returns 200 when the system is usable: either not yet configured (setup wizard available)
+// or configured with the gateway process running.
+app.get("/setup/healthz", (_req, res) => {
+  if (!isConfigured()) {
+    // Not configured yet — setup wizard is available, so the service is healthy.
+    return res.json({ ok: true, status: "awaiting_setup" });
+  }
+  if (gatewayProc && !gatewayProc.killed) {
+    return res.json({ ok: true, status: "gateway_running" });
+  }
+  // Configured but gateway is not running — Railway should consider restarting.
+  return res.status(503).json({ ok: false, status: "gateway_down" });
+});
 
 app.get("/setup/app.js", requireSetupAuth, (_req, res) => {
   // Serve JS for /setup (kept external to avoid inline encoding/template issues)
@@ -756,7 +768,7 @@ app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
     }
     if (cmd === "gateway.stop") {
       if (gatewayProc) {
-        try { gatewayProc.kill("SIGTERM"); } catch {}
+        try { gatewayProc.kill("SIGTERM"); } catch (err) { console.warn(`[gateway] failed to send SIGTERM during stop: ${String(err)}`); }
         await sleep(750);
         gatewayProc = null;
       }
@@ -927,21 +939,38 @@ function looksSafeTarPath(p) {
   return true;
 }
 
-async function readBodyBuffer(req, maxBytes) {
+async function readBodyBuffer(req, maxBytes, timeoutMs = 120_000) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let total = 0;
+    let finished = false;
+
+    const timer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      reject(new Error(`readBodyBuffer timed out after ${timeoutMs}ms (received ${total} bytes)`));
+      req.destroy();
+    }, timeoutMs);
+
+    const done = (fn, val) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      fn(val);
+    };
+
     req.on("data", (chunk) => {
+      if (finished) return;
       total += chunk.length;
       if (total > maxBytes) {
-        reject(new Error("payload too large"));
+        done(reject, new Error("payload too large"));
         req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
+    req.on("end", () => done(resolve, Buffer.concat(chunks)));
+    req.on("error", (err) => done(reject, err));
   });
 }
 
@@ -959,7 +988,7 @@ app.post("/setup/import", requireSetupAuth, async (req, res) => {
 
     // Stop gateway before restore so we don't overwrite live files.
     if (gatewayProc) {
-      try { gatewayProc.kill("SIGTERM"); } catch {}
+      try { gatewayProc.kill("SIGTERM"); } catch (err) { console.warn(`[import] failed to send SIGTERM to gateway: ${String(err)}`); }
       await sleep(750);
       gatewayProc = null;
     }
@@ -985,7 +1014,7 @@ app.post("/setup/import", requireSetupAuth, async (req, res) => {
       },
     });
 
-    try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    try { fs.rmSync(tmpPath, { force: true }); } catch (err) { console.warn(`[import] failed to clean up temp file ${tmpPath}: ${String(err)}`); }
 
     // Restart gateway after restore.
     if (isConfigured()) {
@@ -1046,7 +1075,8 @@ server.on("upgrade", async (req, socket, head) => {
   }
   try {
     await ensureGatewayRunning();
-  } catch {
+  } catch (err) {
+    console.error(`[upgrade] gateway not ready for WebSocket upgrade: ${String(err)}`);
     socket.destroy();
     return;
   }
@@ -1057,8 +1087,8 @@ process.on("SIGTERM", () => {
   // Best-effort shutdown
   try {
     if (gatewayProc) gatewayProc.kill("SIGTERM");
-  } catch {
-    // ignore
+  } catch (err) {
+    console.error(`[shutdown] failed to send SIGTERM to gateway: ${String(err)}`);
   }
   process.exit(0);
 });
