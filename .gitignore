@@ -11,5 +11,9 @@ npm-debug.log*
 # Backup exports
 *.tar.gz
 
+# Python
+__pycache__/
+*.egg-info/
+
 # OS
 .DS_Store
