@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blog-cli"
+version = "1.0.0"
+description = "CLI tool to generate SEO-optimized blog posts for Blaze Vending"
+requires-python = ">=3.9"
+dependencies = [
+    "anthropic>=0.39.0",
+    "openai>=1.50.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+blog = "blog_cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
