@@ -471,5 +471,5 @@ def _check_internal_links(content: str) -> SEOResult:
         "Internal link section: not detected",
         False,
         warning=True,
-        detail="Cowork will add this automatically",
+        detail="will be added during WordPress draft creation",
     )

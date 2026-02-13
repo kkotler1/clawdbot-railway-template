@@ -16,6 +16,10 @@ DEFAULT_CONFIG = {
     "default_model": "claude",
     "default_tone": "motivational",
     "output_dir": "~/Desktop/BlogDrafts/",
+    "wordpress_url": "https://blazevending.com",
+    "wordpress_username": "",
+    "wordpress_app_password": "",
+    "auto_publish_draft": True,
 }
 
 PLACEHOLDER_TEMPLATE = "# Paste your template prompt here\n"
@@ -266,6 +270,35 @@ def run_setup():
     )
     config["output_dir"] = output_dir
 
+    # WordPress settings
+    console.print("\n[bold cyan]WordPress Integration[/bold cyan]\n")
+    console.print(
+        "To enable automatic draft creation, enter your WordPress credentials.\n"
+        "Generate an Application Password at: Users > Profile > Application Passwords.\n"
+    )
+
+    wp_url = click.prompt(
+        "WordPress site URL",
+        default=config.get("wordpress_url", DEFAULT_CONFIG["wordpress_url"]),
+    )
+    config["wordpress_url"] = wp_url.rstrip("/")
+
+    wp_username = click.prompt(
+        "WordPress username (leave blank to skip)",
+        default=config.get("wordpress_username", ""),
+        show_default=False,
+    )
+    config["wordpress_username"] = wp_username.strip()
+
+    wp_app_password = click.prompt(
+        "WordPress Application Password (leave blank to skip)",
+        default=config.get("wordpress_app_password", ""),
+        show_default=False,
+    )
+    config["wordpress_app_password"] = wp_app_password.strip()
+
+    config["auto_publish_draft"] = True
+
     save_config(config)
     ensure_templates()
 
@@ -301,6 +334,14 @@ def run_setup():
             console.print("[green]✓ OpenAI API key validated[/green]")
         except Exception as e:
             console.print(f"[yellow]⚠ OpenAI API key validation failed: {e}[/yellow]")
+
+    if config.get("wordpress_username") and config.get("wordpress_app_password"):
+        try:
+            from .wordpress import validate_credentials
+            validate_credentials(config)
+            console.print("[green]✓ WordPress credentials validated[/green]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ WordPress validation failed: {e}[/yellow]")
 
     console.print()
 

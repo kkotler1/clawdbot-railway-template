@@ -10,6 +10,7 @@ from .config import first_run_check, load_config, run_setup
 from .output import save_blog
 from .seo import display_results, run_seo_checks
 from .templates import load_template, render_template
+from .wordpress import WordPressError, publish_to_wordpress, upload_images_command
 
 console = Console()
 
@@ -65,25 +66,64 @@ ARTICLE_TYPES = [
     help="Print output to terminal instead of saving to file.",
 )
 @click.option(
+    "--no-wordpress",
+    is_flag=True,
+    default=False,
+    help="Skip WordPress draft creation, just save .md file locally.",
+)
+@click.option(
+    "--no-images",
+    is_flag=True,
+    default=False,
+    help="Skip image generation and upload.",
+)
+@click.option(
+    "--upload-images",
+    "upload_images_slug",
+    default=None,
+    help="Upload images for an existing draft by slug (standalone command).",
+)
+@click.option(
     "--setup",
     is_flag=True,
     default=False,
     help="Run interactive setup to configure API keys.",
 )
-def main(topic, tone, model, article_type, core_message, notes, keyword, no_save, setup):
+def main(
+    topic,
+    tone,
+    model,
+    article_type,
+    core_message,
+    notes,
+    keyword,
+    no_save,
+    no_wordpress,
+    no_images,
+    upload_images_slug,
+    setup,
+):
     """Generate SEO-optimized blog posts for Blaze Vending.
 
-    TOPIC is the blog post topic (required unless using --setup).
+    TOPIC is the blog post topic (required unless using --setup or --upload-images).
 
     \b
     Examples:
       blog "vibe coding for vending operators" --tone motivational
       blog "smart vending technology" --model openai --type "research analysis"
+      blog "smart cooler ROI" --no-wordpress
+      blog --upload-images smart-cooler-roi-gyms
       blog --setup
     """
     # Handle --setup flag
     if setup:
         run_setup()
+        return
+
+    # Handle --upload-images standalone command
+    if upload_images_slug:
+        first_run_check()
+        upload_images_command(upload_images_slug)
         return
 
     # First-run check
@@ -154,9 +194,63 @@ def main(topic, tone, model, article_type, core_message, notes, keyword, no_save
             console.print("[yellow]File not saved.[/yellow]")
             sys.exit(0)
 
+    # Always save .md file locally as backup
     filepath = save_blog(blog_content, resolved_keyword)
-    console.print(f"\n[green]Saved to: {filepath}[/green]")
-    console.print("[dim]Cowork will pick this up and create your WordPress draft.[/dim]")
+
+    # Step 6: WordPress draft creation
+    wp_enabled = (
+        not no_wordpress
+        and config.get("wordpress_username")
+        and config.get("wordpress_app_password")
+    )
+
+    if wp_enabled:
+        try:
+            summary = publish_to_wordpress(
+                blog_content=blog_content,
+                keyword=resolved_keyword,
+                skip_images=no_images,
+            )
+            _print_summary(summary, filepath)
+        except WordPressError as e:
+            console.print(f"\n[red]WordPress error: {e}[/red]")
+            console.print(f"[green]File saved locally to: {filepath}[/green]")
+            console.print(
+                "[yellow]Fix the issue above and re-run, "
+                "or use --no-wordpress to skip draft creation.[/yellow]"
+            )
+    else:
+        console.print(f"\n[green]Saved to: {filepath}[/green]")
+        if no_wordpress:
+            console.print("[dim]WordPress draft creation skipped (--no-wordpress).[/dim]")
+        elif not config.get("wordpress_username"):
+            console.print(
+                "[dim]WordPress not configured. Run blog --setup to enable auto-draft creation.[/dim]"
+            )
+
+
+def _print_summary(summary: dict, filepath):
+    """Print the final summary block after WordPress publishing."""
+    console.print("\n[bold]=== YOUR NEW DRAFT ===[/bold]\n")
+    console.print(f"  Title:          {summary.get('edit_url', 'N/A').split('?')[0]}")
+
+    edit_url = summary.get("edit_url", "")
+    if edit_url:
+        console.print(f"  Edit:           {edit_url}")
+
+    rankmath = summary.get("rankmath_set", False)
+    if rankmath:
+        console.print("  Rank Math:      title, description, and focus keyword set")
+    else:
+        console.print("  Rank Math:      [yellow]set manually (see above)[/yellow]")
+
+    images_status = summary.get("images_status", "N/A")
+    console.print(f"  Images:         {images_status}")
+
+    links_count = summary.get("internal_links_count", 0)
+    console.print(f"  Internal links: {links_count} posts linked")
+
+    console.print(f"\n  File also saved to: {filepath}")
 
 
 if __name__ == "__main__":
