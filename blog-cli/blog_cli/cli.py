@@ -145,7 +145,7 @@ def main(
 
     # Step 1: Load template
     model_display = (
-        f"Claude (claude-sonnet-4-5-20250514)" if model == "claude" else "OpenAI (gpt-4o)"
+        f"Claude (claude-sonnet-4-5-20250929)" if model == "claude" else "OpenAI (gpt-4o)"
     )
 
     try:

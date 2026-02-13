@@ -30,7 +30,7 @@ def _call_anthropic(prompt: str, config: dict) -> str:
     client = anthropic.Anthropic(api_key=api_key)
 
     message = client.messages.create(
-        model="claude-sonnet-4-5-20250514",
+        model="claude-sonnet-4-5-20250929",
         max_tokens=8192,
         temperature=0.7,
         messages=[{"role": "user", "content": prompt}],
