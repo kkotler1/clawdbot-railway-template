@@ -13,6 +13,7 @@ TEMPLATES_DIR = CONFIG_DIR / "templates"
 DEFAULT_CONFIG = {
     "anthropic_api_key": "",
     "openai_api_key": "",
+    "gemini_api_key": "",
     "default_model": "claude",
     "default_tone": "motivational",
     "output_dir": "~/Desktop/BlogDrafts/",
@@ -247,6 +248,19 @@ def run_setup():
     )
     config["openai_api_key"] = openai_key.strip()
 
+    # Gemini key (for Imagen 3 image generation)
+    console.print("\n[bold cyan]Image Generation (Imagen 3)[/bold cyan]\n")
+    console.print(
+        "To auto-generate images for blog posts, enter your Google Gemini API key.\n"
+        "Get one at: https://aistudio.google.com/apikey\n"
+    )
+    gemini_key = click.prompt(
+        "Gemini API key (leave blank to skip)",
+        default=config.get("gemini_api_key", ""),
+        show_default=False,
+    )
+    config["gemini_api_key"] = gemini_key.strip()
+
     # Default model
     default_model = click.prompt(
         "Default model",
@@ -334,6 +348,17 @@ def run_setup():
             console.print("[green]✓ OpenAI API key validated[/green]")
         except Exception as e:
             console.print(f"[yellow]⚠ OpenAI API key validation failed: {e}[/yellow]")
+
+    if config.get("gemini_api_key"):
+        try:
+            from google import genai
+
+            client = genai.Client(api_key=config["gemini_api_key"])
+            # Quick validation: list models to check key works
+            client.models.get(model="imagen-3.0-generate-002")
+            console.print("[green]✓ Gemini API key validated (Imagen 3 available)[/green]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ Gemini API key validation failed: {e}[/yellow]")
 
     if config.get("wordpress_username") and config.get("wordpress_app_password"):
         try:

@@ -7,7 +7,8 @@ from rich.console import Console
 
 from .api import call_llm
 from .config import first_run_check, load_config, run_setup
-from .output import save_blog
+from .image_gen import embed_images_in_markdown, generate_images, parse_image_prompts
+from .output import extract_slug, save_blog
 from .seo import display_results, run_seo_checks
 from .templates import load_template, render_template
 from .wordpress import WordPressError, publish_to_wordpress, upload_images_command
@@ -182,7 +183,48 @@ def main(
     seo_results = run_seo_checks(blog_content, resolved_keyword)
     has_failures = display_results(seo_results, console)
 
-    # Step 5: Handle output
+    # Step 5: Generate images with Imagen 3 (unless --no-images)
+    image_paths = []
+    if not no_images:
+        config_check = load_config()
+        if config_check.get("gemini_api_key"):
+            console.print("\n[cyan]Parsing image prompts from blog content...[/cyan]")
+            image_prompts = parse_image_prompts(blog_content)
+            if image_prompts:
+                console.print(
+                    f"[green]Found {len(image_prompts)} image prompts. Generating with Imagen 3...[/green]"
+                )
+                slug = extract_slug(blog_content, resolved_keyword)
+                try:
+                    image_paths = generate_images(image_prompts, slug)
+                    if image_paths:
+                        console.print(
+                            f"[green]{len(image_paths)} images generated and saved to images/{slug}/[/green]"
+                        )
+                        # Embed image references in the markdown content
+                        blog_content = embed_images_in_markdown(
+                            blog_content, image_paths, slug
+                        )
+                        console.print(
+                            "[green]Image references embedded in blog draft.[/green]"
+                        )
+                except Exception as e:
+                    console.print(f"[red]Image generation error: {e}[/red]")
+                    console.print(
+                        "[yellow]Continuing without images. "
+                        "You can generate them later with a separate tool.[/yellow]"
+                    )
+            else:
+                console.print(
+                    "[yellow]No image prompts found in blog content.[/yellow]"
+                )
+        else:
+            console.print(
+                "\n[dim]Image generation skipped (no Gemini API key). "
+                "Run blog --setup to configure.[/dim]"
+            )
+
+    # Step 6: Handle output
     if no_save:
         console.print("\n[bold]--- BLOG OUTPUT ---[/bold]\n")
         console.print(blog_content)
@@ -197,7 +239,7 @@ def main(
     # Always save .md file locally as backup
     filepath = save_blog(blog_content, resolved_keyword)
 
-    # Step 6: WordPress draft creation
+    # Step 7: WordPress draft creation
     wp_enabled = (
         not no_wordpress
         and config.get("wordpress_username")
