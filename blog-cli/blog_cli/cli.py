@@ -183,45 +183,40 @@ def main(
     seo_results = run_seo_checks(blog_content, resolved_keyword)
     has_failures = display_results(seo_results, console)
 
-    # Step 5: Generate images with Imagen 3 (unless --no-images)
+    # Step 5: Generate images (unless --no-images)
     image_paths = []
     if not no_images:
-        config_check = load_config()
-        if config_check.get("gemini_api_key"):
-            console.print("\n[cyan]Parsing image prompts from blog content...[/cyan]")
-            image_prompts = parse_image_prompts(blog_content)
-            if image_prompts:
-                console.print(
-                    f"[green]Found {len(image_prompts)} image prompts. Generating with Imagen 3...[/green]"
-                )
-                slug = extract_slug(blog_content, resolved_keyword)
-                try:
-                    image_paths = generate_images(image_prompts, slug)
-                    if image_paths:
-                        console.print(
-                            f"[green]{len(image_paths)} images generated and saved to images/{slug}/[/green]"
-                        )
-                        # Embed image references in the markdown content
-                        blog_content = embed_images_in_markdown(
-                            blog_content, image_paths, slug
-                        )
-                        console.print(
-                            "[green]Image references embedded in blog draft.[/green]"
-                        )
-                except Exception as e:
-                    console.print(f"[red]Image generation error: {e}[/red]")
+        image_provider = config.get("image_provider", "auto")
+        console.print(f"\n[cyan]Parsing image prompts from blog content...[/cyan]")
+        image_prompts = parse_image_prompts(blog_content)
+        if image_prompts:
+            provider_label = image_provider if image_provider != "auto" else "auto (Gemini → OpenAI → fallback)"
+            console.print(
+                f"[green]Found {len(image_prompts)} image prompts. Provider: {provider_label}[/green]"
+            )
+            slug = extract_slug(blog_content, resolved_keyword)
+            try:
+                image_paths = generate_images(image_prompts, slug)
+                if image_paths:
                     console.print(
-                        "[yellow]Continuing without images. "
-                        "You can generate them later with a separate tool.[/yellow]"
+                        f"[green]{len(image_paths)} images generated and saved to images/{slug}/[/green]"
                     )
-            else:
+                    # Embed image references in the markdown content
+                    blog_content = embed_images_in_markdown(
+                        blog_content, image_paths, slug
+                    )
+                    console.print(
+                        "[green]Image references embedded in blog draft.[/green]"
+                    )
+            except Exception as e:
+                console.print(f"[red]Image generation error: {e}[/red]")
                 console.print(
-                    "[yellow]No image prompts found in blog content.[/yellow]"
+                    "[yellow]Continuing without images. "
+                    "You can generate them later with a separate tool.[/yellow]"
                 )
         else:
             console.print(
-                "\n[dim]Image generation skipped (no Gemini API key). "
-                "Run blog --setup to configure.[/dim]"
+                "[yellow]No image prompts found in blog content.[/yellow]"
             )
 
     # Step 6: Handle output

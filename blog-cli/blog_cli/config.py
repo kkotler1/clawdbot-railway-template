@@ -16,6 +16,7 @@ DEFAULT_CONFIG = {
     "gemini_api_key": "",
     "default_model": "claude",
     "default_tone": "motivational",
+    "image_provider": "auto",
     "output_dir": "~/Desktop/BlogDrafts/",
     "wordpress_url": "https://blazevending.com",
     "wordpress_username": "",
@@ -261,6 +262,24 @@ def run_setup():
     )
     config["gemini_api_key"] = gemini_key.strip()
 
+    # Image provider
+    console.print(
+        "\n[bold cyan]Image Provider[/bold cyan]\n"
+    )
+    console.print(
+        "Choose which service generates blog images:\n"
+        "  [cyan]auto[/cyan]   — try Gemini first, fall back to OpenAI DALL-E 3\n"
+        "  [cyan]gemini[/cyan] — Google Imagen only\n"
+        "  [cyan]openai[/cyan] — OpenAI DALL-E 3 only\n"
+        "  [cyan]none[/cyan]   — skip image generation (save prompts to file)\n"
+    )
+    image_provider = click.prompt(
+        "Image provider",
+        type=click.Choice(["auto", "gemini", "openai", "none"]),
+        default=config.get("image_provider", "auto"),
+    )
+    config["image_provider"] = image_provider
+
     # Default model
     default_model = click.prompt(
         "Default model",
@@ -362,8 +381,30 @@ def run_setup():
         if genai is not None:
             try:
                 client = genai.Client(api_key=config["gemini_api_key"])
-                client.models.get(model="imagen-3.0-generate-002")
-                console.print("[green]✓ Gemini API key validated (Imagen 3 available)[/green]")
+                # Try to discover available imagen models
+                found_model = None
+                try:
+                    for m in client.models.list():
+                        if "imagen" in m.name.lower():
+                            found_model = m.name
+                            break
+                except Exception:
+                    pass
+                if not found_model:
+                    for candidate in ("imagen-3.0-generate-002", "imagen-3.0-generate-001"):
+                        try:
+                            client.models.get(model=candidate)
+                            found_model = candidate
+                            break
+                        except Exception:
+                            continue
+                if found_model:
+                    console.print(f"[green]✓ Gemini API key validated (model: {found_model})[/green]")
+                else:
+                    console.print(
+                        "[yellow]⚠ Gemini key works but no Imagen model found on your plan.\n"
+                        "  Consider setting image_provider to 'openai' or 'none'.[/yellow]"
+                    )
             except Exception as e:
                 console.print(f"[yellow]⚠ Gemini API key validation failed: {e}[/yellow]")
 
