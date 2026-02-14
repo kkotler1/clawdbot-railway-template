@@ -85,8 +85,9 @@ def _generate_gemini(prompts: list[dict], slug: str, config: dict) -> list[Path]
                     break
                 except Exception:
                     continue
-    except Exception:
-        # Fall back to the default model name if listing fails
+    except Exception as e:
+        console.print(f"  [yellow]Could not list Gemini models: {e}[/yellow]")
+        # Try the default model name — will fail at generation time if unavailable
         available_model = "imagen-3.0-generate-002"
 
     if not available_model:
@@ -255,7 +256,18 @@ def generate_images(prompts: list[dict], slug: str, provider: str | None = None)
         return []
 
     if provider == "gemini":
-        return _generate_gemini(prompts, slug, config)
+        paths = _generate_gemini(prompts, slug, config)
+        if not paths and config.get("openai_api_key"):
+            console.print(
+                "  [yellow]All Gemini images failed. Falling back to OpenAI DALL-E 3...[/yellow]"
+            )
+            paths = _generate_openai(prompts, slug, config)
+        if not paths:
+            console.print(
+                "  [yellow]Tip: Set image_provider to 'openai' in config if Imagen "
+                "isn't available on your plan.[/yellow]"
+            )
+        return paths
 
     if provider == "openai":
         return _generate_openai(prompts, slug, config)
