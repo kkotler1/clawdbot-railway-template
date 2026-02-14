@@ -352,13 +352,20 @@ def run_setup():
     if config.get("gemini_api_key"):
         try:
             from google import genai
+        except ImportError:
+            console.print(
+                "[yellow]⚠ Gemini validation skipped: 'google-genai' package not installed.\n"
+                "  Install with: pip install google-genai[/yellow]"
+            )
+            genai = None
 
-            client = genai.Client(api_key=config["gemini_api_key"])
-            # Quick validation: list models to check key works
-            client.models.get(model="imagen-3.0-generate-002")
-            console.print("[green]✓ Gemini API key validated (Imagen 3 available)[/green]")
-        except Exception as e:
-            console.print(f"[yellow]⚠ Gemini API key validation failed: {e}[/yellow]")
+        if genai is not None:
+            try:
+                client = genai.Client(api_key=config["gemini_api_key"])
+                client.models.get(model="imagen-3.0-generate-002")
+                console.print("[green]✓ Gemini API key validated (Imagen 3 available)[/green]")
+            except Exception as e:
+                console.print(f"[yellow]⚠ Gemini API key validation failed: {e}[/yellow]")
 
     if config.get("wordpress_username") and config.get("wordpress_app_password"):
         try:

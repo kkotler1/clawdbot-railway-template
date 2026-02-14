@@ -56,7 +56,14 @@ def generate_images(prompts: list[dict], slug: str) -> list[Path]:
     if not api_key:
         raise ValueError("Gemini API key not configured. Run: blog --setup")
 
-    from google import genai
+    try:
+        from google import genai
+    except ImportError:
+        raise ImportError(
+            "The 'google-genai' package is required for image generation.\n"
+            "Install it with: pip install google-genai\n"
+            "Note: 'google-generativeai' is a different (deprecated) package."
+        )
 
     client = genai.Client(api_key=api_key)
 
