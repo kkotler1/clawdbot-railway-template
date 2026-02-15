@@ -175,20 +175,20 @@ def _generate_openai(prompts: list[dict], slug: str, config: dict) -> list[Path]
         )
 
         try:
+            import base64
+
             response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt_text,
                 size=dalle_size,
                 quality="standard",
                 n=1,
+                response_format="b64_json",
             )
 
-            image_url = response.data[0].url
-
-            # Download the image
-            import urllib.request
+            image_bytes = base64.b64decode(response.data[0].b64_json)
             filepath = images_dir / f"image-{num}.png"
-            urllib.request.urlretrieve(image_url, str(filepath))
+            filepath.write_bytes(image_bytes)
 
             generated_paths.append(filepath)
             console.print(
